@@ -1,0 +1,268 @@
+#!/bin/sh
+#
+# Build the Installer package
+#
+
+set -e
+
+APPVERSION="1.0.0"
+ICONSOURCE="The_Scream-cropped.png"
+BUNDLEID="mil.navy.mil.cmf.stigviewer2"
+APPNAME=STIGViewer2
+APPCERT="${APPCERT:-Developer ID Application:}"
+INSTCERT="${INSTCERT:-Developer ID Installer:}"
+NOTARYPW="${NOTARYPW:-Notarization}"
+BUILDDIR="/tmp/build-${APPNAME}"
+APPDIR="${BUILDDIR}/${APPNAME}.app"
+CONTENTDIR="${APPDIR}/Contents"
+PROGDIR="${CONTENTDIR}/MacOS"
+PROGNAME=STIGViewer-wrapper
+RESDIR="${CONTENTDIR}/Resources"
+JAVADIR="${CONTENTDIR}/Java"
+STIGVIEWERJAR="STIGViewer-2.18"		# Add .jar in code where appropriate
+OUTPACKAGE="${BUILDDIR}/${APPNAME}-${APPVERSION}.pkg"
+PLB=/usr/libexec/PlistBuddy
+
+#
+# You really do need a suffix of ".iconset" for iconutil to work
+#
+
+ICONDIR="${BUILDDIR}/${APPNAME}.iconset"
+
+if [ -z "$NOTARYUSER" -a -z "$SKIPNOTARY" ]; then
+	echo "NOTARYUSER must be set (set SKIPNOTARY to not notarize package)"
+	exit 1
+fi
+
+APPSIGNID=$(security find-certificate -Z -c "$APPCERT" | grep 'SHA-1' | awk 'NF { print $NF }')
+
+if [ -z "$APPSIGNID" -a -z "$SKIPSIGN" ]; then
+	echo "Unable to find developer application identity $APPCERT in Keychain"
+	echo "Set APPSIGNID to specify a signing identity or SKIPSIGN to skip signing"
+	exit 1
+fi
+
+INSTSIGNID=$(security find-certificate -Z -c "$INSTCERT" | grep '"alis"<blob>=' | sed  -e 's/.*="\(.*\)"$/\1/')
+
+if [ -z "$INSTSIGNID" -a -z "$SKIPSIGN" ]; then
+	echo "Unable to find developer install certificate identity $INSTCERT in Keychain"
+	echo "Set INSTSIGNID to specify a signing identity or SKIPSIGN to skip signing"
+	exit 1
+fi
+
+if [ -z "$SKIPSIGN" ]; then
+	ASC_PROVIDER=$(echo "$INSTSIGNID" | sed -e 's/.*(\([A-Za-z0-9]*\))$/\1/')
+	if [ -z "$ASC_PROVIDER" ]; then
+		echo "Unable to extract ASC Provider from Installer certificate $INSTSIGNID"
+		exit 1
+	fi
+
+	cat <<EOF
+Code signing ID: $APPSIGNID
+Installer signing ID: $INSTSIGNID
+ASC provider: $ASC_PROVIDER
+EOF
+
+fi
+
+set -x
+
+rm -rf "${BUILDDIR}"
+mkdir -p "${PROGDIR}"
+mkdir -p "${ICONDIR}"
+mkdir -p "${RESDIR}"
+mkdir -p "${JAVADIR}"
+
+#
+# Generate the icon file from the source image
+#
+
+for size in 16 32 128 256 1024
+do
+	sips -z $size $size "$ICONSOURCE" --out \
+		"${ICONDIR}/icon_${size}x${size}.png"
+done
+
+for size in 32 64 256 512
+do
+	sips -z $size $size "$ICONSOURCE" --out \
+		"${ICONDIR}/icon_$((${size} / 2))x$((${size} / 2))@2x.png"
+done
+
+iconutil -c icns -o "${RESDIR}/${APPNAME}.icns" "${ICONDIR}"
+
+#
+# Generate our Info.plist
+#
+
+cat > "${CONTENTDIR}/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>${APPNAME}</string>
+	<key>CFBundleExecutable</key>
+	<string>${PROGNAME}</string>
+	<key>CFBundleIdentifier</key>
+	<string>${BUNDLEID}</string>
+	<key>CFBundleVersion</key>
+	<string>${APPVERSION}</string>
+	<key>CFBundleShortVersionString</key>
+	<string>${APPVERSION}</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleIconFile</key>
+	<string>${APPNAME}.icns</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>
+EOF
+
+cp "$PROGNAME" "$PROGDIR"
+
+#
+# The values from the "arch" command are (currently) i386 and arm64.
+# The bellsoft JREs use "amd64" and "aarch64".  Map appropriately
+#
+# It's not really documented well, but JREs go under the "Java" directory
+# in "Contents" and codesign will do the appropriate magic (if you try
+# to put them anywhere else, codesign complains).
+#
+
+for arch in i386 arm64
+do
+	case "$arch" in
+	i386)	jrearch=amd64 ;;
+	arm64)	jrearch=aarch64 ;;
+	*)	echo "Internal error: unknown arch $arch"; exit 1 ;;
+	esac
+
+	mkdir -p "${JAVADIR}/${arch}"
+
+	matchstring="jre/*jre*${jrearch}*.tar.gz"
+	eval "set -- ${matchstring}"
+
+	if [ "$#" -gt 1 ]; then
+		echo "Multiple JREs found for architecture $jrearch"
+		echo "List: $@"
+		echo "Correct this and run again"
+		exit 1
+	elif [ X"$1" = X"$matchstring" ]; then
+		echo "No matching JRE for architecture $jrearch"
+		exit
+	fi
+
+	#
+	# We're using --strip-components 1 here because I didn't want
+	# the wrapper script to have the JRE version embedded in it;
+	# it's much simpler if the java binary always lives in
+	# Java/${arch}/bin/java
+	#
+
+	tar -C "${JAVADIR}/${arch}" -x -z --strip-components 1 -f "$1"
+done
+
+cp "${STIGVIEWERJAR}.jar" "$JAVADIR"
+
+#
+# Do any substitutions on files in the package bundle
+#
+
+sed -i '' \
+	-e "s/@STIGVIEWERJAR@/${STIGVIEWERJAR}/g" \
+	-e "s/@APPNAME@/${APPNAME}/g" \
+	"${PROGDIR}/${PROGNAME}"
+
+if [ -z "$SKIPSIGN" ]; then
+	codesign \
+		--timestamp \
+		-o runtime \
+		--identifier "$BUNDLEID" \
+		--sign "$APPSIGNID" \
+		"$APPDIR"
+fi
+
+pkgbuild \
+	--component "$APPDIR" \
+	--identifier "${BUNDLEID}.pkg" \
+	--version "$APPVERSION" \
+	--install-location "/Applications" \
+	"${BUILDDIR}/main.pkg"
+
+#
+# Generate our distribution.xml file
+#
+
+cat > "${BUILDDIR}/distribution.xml" <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>${APPNAME}</title>
+    <options customize="never" hostArchitectures="x86_64,arm64"/>
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <welcome file="welcome.rtf" mime-type="text/rtf"/>
+    <choice id="${BUNDLEID}.pkg" visible="true" start_selected="true" title="${APPNAME} Application"
+        description="All of the files necessary to run ${APPNAME}">
+	<pkg-ref id="${BUNDLEID}.pkg">main.pkg</pkg-ref>
+    </choice>
+    <choices-outline>
+        <line choice="${BUNDLEID}.pkg"/>
+    </choices-outline>
+</installer-gui-script>
+EOF
+
+mkdir -p "${BUILDDIR}/resources"
+sed \
+	-e "s/@STIGVIEWERJAR@/${STIGVIEWERJAR}/g" \
+	< welcome.rtf \
+	> "${BUILDDIR}/resources/welcome.rtf"
+
+productbuild \
+	--identifier "${APPIDENTIFIER}" \
+	--version "${APPVERSION}" \
+	--resources "${BUILDDIR}/resources" \
+	--package-path "${BUILDDIR}" \
+	--distribution "${BUILDDIR}/distribution.xml" \
+	"${OUTPACKAGE}"
+
+if [ -z "$SKIPSIGN" ]; then
+	productsign \
+		--timestamp \
+		--sign "${INSTSIGNID}" \
+		"${OUTPACKAGE}" \
+		"${OUTPACKAGE}"-tmp
+	mv -f "${OUTPACKAGE}"-tmp "${OUTPACKAGE}"
+fi
+
+if [ -z "$SKIPNOTARY" ]; then
+	NOTESTATUS="/tmp/notestatus.$$"
+	xcrun notarytool submit \
+		"${OUTPACKAGE}" \
+		--apple-id "$NOTARYUSER" \
+		--keychain-profile "${NOTARYPW}" \
+		--team-id "$ASC_PROVIDER" \
+		--wait \
+		--output-format plist \
+		> "$NOTESTATUS"
+	STATUS="$($PLB -c "Print :status" "$NOTESTATUS")"
+
+	if [ X"$STATUS" != "XAccepted" ]; then
+		echo "Notarization failed with a status of $STATUS"
+		STATUSLOG="/tmp/notarylog.$$"
+		STATUSID="$($PLB -c 'Print :id' "$NOTESTATUS")"
+		xcrun notarytool log "$STATUSID" \
+			--apple-id "$NOTARYUSER" \
+			--keychain-profile "$NOTARYPW" \
+			--team-id "$ASC_PROVIDER" \
+			"$STATUSLOG"
+		exit 1
+	else
+		echo "Notarization successful"
+		rm -f "$NOTESTATUS"
+	fi
+
+	xcrun stapler staple "$OUTPACKAGE"
+fi
+
+cp "$OUTPACKAGE" .

@@ -1,0 +1,5 @@
+#
+# List of files for git to ignore
+#
+/*.pkg
+/jre/*.tar.gz

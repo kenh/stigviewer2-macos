@@ -1,0 +1,36 @@
+#!/bin/sh
+#
+# Wrapper script for STIGViewer
+#
+# I investigated building a universal JRE, but there were enough architecture
+# dependent files that WEREN'T code that made it unfeasible.  So determine
+# the architecture with the "arch" command and execute the appropriate
+# java command from the appropriate JRE
+#
+
+set -e
+
+exec > /tmp/stigviewer-log 2>&1
+
+set -x
+
+popup_error() {
+	osascript -e "tell application \"System Events\" to display dialog \"STIGViewer-wrapper failed, run from a Terminal window for more information\" with title \"${APPNAME:-STIGViewer}\" buttons { \" OK \" } default button 1"
+}
+
+trap popup_error ERR
+
+PROGDIR=$(dirname $(realpath "$0"))
+APPNAME="@APPNAME@"
+
+javaexec="${PROGDIR}/../Java/$(arch)/bin/java"
+
+if [ ! -e "${javaexec}" ]; then
+	osascript -e "tell application \"System Events\" to display dialog \"Internal Error: STIGViewer-wrapper did not find Java JRE at ${javaexec}\" with title \"${APPNAME:-STIGViewer}\" buttons { \" OK \" } default button 1"
+	exit 1
+fi
+
+exec "${javaexec}" \
+	--enable-native-access=javafx.graphics \
+	--enable-native-access=javafx.web \
+	-jar "${PROGDIR}/../Java/@STIGVIEWERJAR@.jar"
