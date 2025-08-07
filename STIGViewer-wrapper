@@ -10,10 +10,6 @@
 
 set -e
 
-exec > /tmp/stigviewer-log 2>&1
-
-set -x
-
 popup_error() {
 	osascript -e "tell application \"System Events\" to display dialog \"STIGViewer-wrapper failed, run from a Terminal window for more information\" with title \"${APPNAME:-STIGViewer}\" buttons { \" OK \" } default button 1"
 }
