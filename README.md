@@ -22,7 +22,7 @@ Intel and Apple Silicon.  As of this writing, I am using JDK 24 as
 provided by Bellsoft; you can download these from the
 [Bellsoft Download Page](https://bell-sw.com/pages/downloads/).  Note
 that you need the **Full** JRE, not the Standard JRE; the Full JRE
-included JavaFX which is needed by the STIGViewer.  Download the
+includes JavaFX which is needed by the STIGViewer.  Download the
 gzipped tar files and place them in the `jre` directory in a checked-out
 copy of the repository.  Note that currently `build-package` is expecting
 a naming similar to the Bellsoft JREs; specifically, the tar files should
