@@ -33,7 +33,7 @@ In the repo the `build-package` script does all of the work of building
 the app bundle, creating the Installer package, and signing and notarizing
 the package.  To sign the package you will need an Apple Developer ID
 Application AND a Developer ID Installer signing identities.  By default
-`build-package will look through your Keychain to find those identities.
+`build-package` will look through your Keychain to find those identities.
 To notarize the package you will have to supply your notarization username
 (which is the email associated with your Apple developer account) in
 the `NOTARYUSER` environment variable.
