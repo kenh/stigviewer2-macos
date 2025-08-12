@@ -16,7 +16,7 @@ popup_error() {
 
 trap popup_error ERR
 
-PROGDIR=$(dirname $(realpath "$0"))
+PROGDIR=$(dirname "$(realpath "$0")")
 APPNAME="@APPNAME@"
 
 javaexec="${PROGDIR}/../Java/$(arch)/bin/java"
