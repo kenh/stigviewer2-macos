@@ -45,7 +45,7 @@ the `NOTARYUSER` environment variable.
 | `NOTARYUSER` | The username used to authenticate to the notarization service.  This is mandatory |
 | `NOTARYPW` | The Keychain profile name containing a stored notarization password, typically stored with `notarytool store-credentials`.  Defaults to `Notarization`. |
 | `APPCERT` | A string used to search for a valid code signing certificate. Defaults to `Developer ID Application:` |
-| `INSTCERT` | A string used to to search for a valid Installer signing certificate. Defaults to `Developer ID Installer:\ |
+| `INSTCERT` | A string used to to search for a valid Installer signing certificate. Defaults to `Developer ID Installer:` |
 | `SKIPSIGN` | If set, the app bundle and Installer will not be signed |
 | `SKIPNOTARY` | If set, notarization will be skipped |
 
